@@ -1,0 +1,1 @@
+/n/work5/magoshi/research_m1/research_m1_ipa_dataset/espnet/egs2/TEMPLATE/s2t1/s2t_ctc.sh
