@@ -1,15 +1,6 @@
-[project]
-name = "espnet-local"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = "==3.10.*"
-dependencies = [
-    "lightning>=2.6.0",
-    "torch==2.7.1",
-    "torchaudio==2.7.1",
-    "torchvision==0.22.1",
-]
+[build-system]
+requires = ["setuptools>=38.5.1,<74.0.0"]
+build-backend = "setuptools.build_meta"
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
@@ -36,7 +27,7 @@ extra-index-urls = ["https://download.pytorch.org/whl/cu128"]
 index-strategy = "unsafe-best-match"
 
 [tool.pixi.pypi-dependencies]
-espnet-local = { path = ".", editable = true }
+espnet = { path = ".", editable = true, extras = ["all"] }
 torch = "==2.7.1"
 torchaudio = "==2.7.1"
 torchvision = "==0.22.1"
