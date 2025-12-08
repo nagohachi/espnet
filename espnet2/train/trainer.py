@@ -595,6 +595,7 @@ class Trainer:
 
             batch["utt_id"] = utt_id
 
+
             batch = to_device(batch, "cuda" if ngpu > 0 else "cpu")
             if no_forward_run:
                 all_steps_are_invalid = False

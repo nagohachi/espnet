@@ -178,9 +178,9 @@ class ESPnetASRModel(AbsESPnetModel):
             # and threw an Exception in the multi-GPU experiment.
             # thanks Jeff Farris for pointing out the issue.
             if ctc_weight < 1.0:
-                assert (
-                    decoder is not None
-                ), "decoder should not be None when attention is used"
+                assert decoder is not None, (
+                    "decoder should not be None when attention is used"
+                )
             else:
                 decoder = None
                 logging.warning("Set decoder to none as ctc_weight==1.0")
@@ -212,9 +212,9 @@ class ESPnetASRModel(AbsESPnetModel):
             self.is_encoder_whisper = False
 
         if self.is_encoder_whisper:
-            assert (
-                self.frontend is None
-            ), "frontend should be None when using full Whisper model"
+            assert self.frontend is None, (
+                "frontend should be None when using full Whisper model"
+            )
 
         if lang_token_id != -1:
             self.lang_token_id = torch.tensor([[lang_token_id]])
@@ -254,7 +254,10 @@ class ESPnetASRModel(AbsESPnetModel):
         text = text[:, : text_lengths.max()]
 
         # 1. Encoder
-        encoder_out, encoder_out_lens = self.encode(speech, speech_lengths)
+        global_step = kwargs.get("global_step", None)
+        encoder_out, encoder_out_lens = self.encode(
+            speech, speech_lengths, global_step=global_step
+        )
         intermediate_outs = None
         if isinstance(encoder_out, tuple):
             intermediate_outs = encoder_out[1]
@@ -391,7 +394,10 @@ class ESPnetASRModel(AbsESPnetModel):
         return {"feats": feats, "feats_lengths": feats_lengths}
 
     def encode(
-        self, speech: torch.Tensor, speech_lengths: torch.Tensor
+        self,
+        speech: torch.Tensor,
+        speech_lengths: torch.Tensor,
+        global_step: Optional[int],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Frontend + Encoder. Note that this method is used by asr_inference.py
 
@@ -421,7 +427,8 @@ class ESPnetASRModel(AbsESPnetModel):
         if self.encoder is None:
             encoder_out, encoder_out_lens = feats, feats_lengths
         else:
-
+            if global_step is not None and hasattr(self.encoder, "maybe_unfreeze"):
+                self.encoder.maybe_unfreeze(global_step)
             if getattr(self.encoder, "interctc_use_conditioning", False) or getattr(
                 self.encoder, "ctc_trim", False
             ):
