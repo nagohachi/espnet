@@ -1,5 +1,5 @@
 [project]
-name = "my_espnet"
+name = "espnet"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -9,7 +9,6 @@ dependencies = [
     "torch==2.7.1",
     "torchaudio==2.7.1",
     "torchvision==0.22.1",
-    "espnet[train,recipe]"
 ]
 
 [tool.uv.sources]
@@ -22,8 +21,6 @@ torchaudio = [
 torchvision = [
     { index = "torch-cu128" }
 ]
-espnet = { path = ".", editable = true }
-
 [[tool.uv.index]]
 name = "torch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
