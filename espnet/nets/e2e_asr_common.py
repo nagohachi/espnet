@@ -136,14 +136,16 @@ class ErrorCalculator(object):
         :param torch.Tensor ys_hat: prediction (batch, seqlen)
         :param torch.Tensor ys_pad: reference (batch, seqlen)
         :param bool is_ctc: calculate CER score for CTC
-        :return: sentence-level WER score
-        :rtype float
         :return: sentence-level CER score
+        :rtype float
+        :return: sentence-level WER score
         :rtype float
         """
         cer, wer = None, None
         if is_ctc:
-            return self.calculate_cer_ctc(ys_hat, ys_pad)
+            return self.calculate_cer_ctc(ys_hat, ys_pad), self.calculate_wer_ctc(
+                ys_hat, ys_pad
+            )
         elif not self.report_cer and not self.report_wer:
             return cer, wer
 
@@ -189,6 +191,42 @@ class ErrorCalculator(object):
         cer_ctc = float(sum(cers)) / sum(char_ref_lens) if cers else None
         return cer_ctc
 
+    def calculate_wer_ctc(self, ys_hat, ys_pad):
+        """Calculate sentence-level WER score for CTC.
+
+        :param torch.Tensor ys_hat: prediction (batch, seqlen)
+        :param torch.Tensor ys_pad: reference (batch, seqlen)
+        :return: average sentence-level WER score
+        :rtype float
+        """
+        import editdistance
+
+        wers, word_ref_lens = [], []
+        for i, y in enumerate(ys_hat):
+            y_hat = [x[0] for x in groupby(y)]
+            y_true = ys_pad[i]
+            seq_hat, seq_true = [], []
+            for idx in y_hat:
+                idx = int(idx)
+                if idx != -1 and idx != self.idx_blank:
+                    seq_hat.append(self.char_list[idx])
+
+            for idx in y_true:
+                idx = int(idx)
+                if idx != -1 and idx != self.idx_blank:
+                    seq_true.append(self.char_list[idx])
+
+            hyp_text = "".join(seq_hat).replace(self.space, " ").replace("▁", " ")
+            ref_text = "".join(seq_true).replace(self.space, " ").replace("▁", " ")
+            hyp_words = hyp_text.split()
+            ref_words = ref_text.split()
+            if len(ref_words) > 0:
+                wers.append(editdistance.eval(hyp_words, ref_words))
+                word_ref_lens.append(len(ref_words))
+
+        wer_ctc = float(sum(wers)) / sum(word_ref_lens) if wers else None
+        return wer_ctc
+
     def convert_to_char(self, ys_hat, ys_pad):
         """Convert index to character.
 
@@ -207,9 +245,9 @@ class ErrorCalculator(object):
             # NOTE: padding index (-1) in y_true is used to pad y_hat
             seq_hat = [self.char_list[int(idx)] for idx in y_hat[:ymax]]
             seq_true = [self.char_list[int(idx)] for idx in y_true if int(idx) != -1]
-            seq_hat_text = "".join(seq_hat).replace(self.space, " ")
+            seq_hat_text = "".join(seq_hat).replace(self.space, " ").replace("▁", " ")
             seq_hat_text = seq_hat_text.replace(self.blank, "")
-            seq_true_text = "".join(seq_true).replace(self.space, " ")
+            seq_true_text = "".join(seq_true).replace(self.space, " ").replace("▁", " ")
             seqs_hat.append(seq_hat_text)
             seqs_true.append(seq_true_text)
         return seqs_hat, seqs_true
