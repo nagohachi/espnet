@@ -28,6 +28,8 @@
             echo "uv version: $(uv --version)"
             echo "python version: $(python --version)"
             echo "CUDA version: $(nvcc --version | grep release)"
+            echo "Building environment with uv......"
+            uv sync
           '';
         };
       });
