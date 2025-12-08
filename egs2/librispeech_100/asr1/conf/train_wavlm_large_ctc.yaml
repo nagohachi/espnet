@@ -1,5 +1,5 @@
 batch_type: numel
-batch_bins: 10000000
+batch_bins: 20000000
 accum_grad: 4
 max_epoch: 30
 patience: none
@@ -40,7 +40,7 @@ grad_clip: 1.0
 
 optim: adamw
 optim_conf:
-    lr: 5.0e-4
+    lr: 7.5e-4
     betas: [0.9, 0.999]
     eps: 1.0e-8
     weight_decay: 0.0
