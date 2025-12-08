@@ -17,6 +17,10 @@ class CTC(torch.nn.Module):
         reduce: reduce the CTC loss into a scalar
         ignore_nan_grad: Same as zero_infinity (keeping for backward compatiblity)
         zero_infinity:  Whether to zero infinite losses and the associated gradients.
+        reduction_type: Type of reduction for CTC loss.
+            - "batch_mean": Average over batch (default, legacy behavior)
+            - "mean": Normalize by target lengths then average (like PyTorch CTCLoss)
+            - "sum": Sum without normalization
     """
 
     @typechecked
@@ -32,6 +36,7 @@ class CTC(torch.nn.Module):
         brctc_risk_strategy: str = "exp",
         brctc_group_strategy: str = "end",
         brctc_risk_factor: float = 0.0,
+        reduction_type: str = "batch_mean",
     ):
         super().__init__()
         eprojs = encoder_output_size
@@ -71,21 +76,52 @@ class CTC(torch.nn.Module):
             raise ValueError(f'ctc_type must be "builtin" or "gtnctc": {self.ctc_type}')
 
         self.reduce = reduce
+        self.reduction_type = reduction_type
+
+    def _apply_reduction(
+        self, loss: torch.Tensor, batch_size: int, th_olen: torch.Tensor
+    ) -> torch.Tensor:
+        """Apply reduction to CTC loss.
+
+        Args:
+            loss: Per-sample CTC loss tensor (B,)
+            batch_size: Number of samples in batch
+            th_olen: Target lengths tensor (B,)
+
+        Returns:
+            Reduced loss tensor
+        """
+        if self.reduction_type == "mean":
+            # Normalize by target lengths (like PyTorch CTCLoss "mean")
+            # loss / target_length for each sample, then average over batch
+            target_lengths_sum = th_olen.sum().float()
+            if self.reduce:
+                loss = loss.sum() / target_lengths_sum
+            else:
+                loss = loss / th_olen.float()
+        elif self.reduction_type == "sum":
+            # No normalization, just sum
+            if self.reduce:
+                loss = loss.sum()
+            # else: keep per-sample losses as-is
+        else:  # "batch_mean" (default, legacy behavior)
+            if self.reduce:
+                # Batch-size average
+                loss = loss.sum() / batch_size
+            else:
+                loss = loss / batch_size
+        return loss
 
     def loss_fn(self, th_pred, th_target, th_ilen, th_olen) -> torch.Tensor:
         if self.ctc_type == "builtin" or self.ctc_type == "brctc":
             th_pred = th_pred.log_softmax(2).float()
             loss = self.ctc_loss(th_pred, th_target, th_ilen, th_olen)
             if self.ctc_type == "builtin":
-                size = th_pred.size(1)
+                batch_size = th_pred.size(1)
             else:
-                size = loss.size(0)  # some invalid examples will be excluded
+                batch_size = loss.size(0)  # some invalid examples will be excluded
 
-            if self.reduce:
-                # Batch-size average
-                loss = loss.sum() / size
-            else:
-                loss = loss / size
+            loss = self._apply_reduction(loss, batch_size, th_olen)
             return loss
 
         # builtin2 ignores nan losses using the logic below, while
@@ -136,11 +172,7 @@ class CTC(torch.nn.Module):
             else:
                 size = th_pred.size(1)
 
-            if self.reduce:
-                # Batch-size average
-                loss = loss.sum() / size
-            else:
-                loss = loss / size
+            loss = self._apply_reduction(loss, size, th_olen)
             return loss
 
         elif self.ctc_type == "gtnctc":
@@ -212,33 +244,3 @@ class CTC(torch.nn.Module):
             torch.Tensor: argmax applied 2d tensor (B, Tmax)
         """
         return torch.argmax(self.ctc_lo(hs_pad), dim=2)
-
-    def forced_align(self, hs_pad, hlens, ys_pad, ys_lens, blank_idx=0):
-        """Force alignment between input and target sequences (Viterbi path).
-
-        Args:
-            hs_pad: batch of padded hidden state sequences (B, Tmax, D)
-            hlens: batch of lengths of hidden state sequences (B)
-            ys_pad: batch of padded character id sequence tensor (B, Lmax)
-            ys_lens: batch of lengths of character sequence (B)
-            blank_idx: index of blank symbol
-            Note: B must be 1.
-
-        Returns:
-            alignments: Tuple(tensor, tensor):
-                - Label for each time step in the alignment path computed
-                using forced alignment.
-                - Log probability scores of the labels for each time step.
-
-        """
-        import torchaudio
-
-        if self.ctc_type != "builtin":
-            raise NotImplementedError("force_align needs builtin CTC")
-        log_probs = self.log_softmax(hs_pad)  # (B, Tmax, odim)
-        assert log_probs.size(0) == 1, "Forced alignment needs batch size 1"
-        assert not (ys_pad == blank_idx).any(), "Target has blank tokens."
-        align_label, align_prob = torchaudio.functional.forced_align(
-            log_probs, ys_pad, hlens, ys_lens, blank=blank_idx
-        )
-        return align_label, align_prob
