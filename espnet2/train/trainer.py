@@ -558,7 +558,6 @@ class Trainer:
         options: TrainerOptions,
         distributed_option: DistributedOption,
     ) -> bool:
-
         grad_noise = options.grad_noise
         accum_grad = options.accum_grad
         grad_clip = options.grad_clip
@@ -594,7 +593,7 @@ class Trainer:
                     break
 
             batch["utt_id"] = utt_id
-
+            batch["global_step"] = reporter.get_total_count()
 
             batch = to_device(batch, "cuda" if ngpu > 0 else "cpu")
             if no_forward_run:
