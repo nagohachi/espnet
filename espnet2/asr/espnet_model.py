@@ -126,14 +126,20 @@ class ESPnetASRModel(AbsESPnetModel):
 
         if self.use_transducer_decoder:
             self.decoder = decoder
+            # espnet2.asr_transducer.joint_network.JointNetwork
             self.joint_network = joint_network
 
             if not transducer_multi_blank_durations:
-                from warprnnt_pytorch import RNNTLoss
+                # from warprnnt_pytorch import RNNTLoss
+
+                # self.criterion_transducer = RNNTLoss(
+                #     blank=self.blank_id,
+                #     fastemit_lambda=0.0,
+                # )
+                from torchaudio.transforms import RNNTLoss
 
                 self.criterion_transducer = RNNTLoss(
                     blank=self.blank_id,
-                    fastemit_lambda=0.0,
                 )
             else:
                 from espnet2.asr.transducer.rnnt_multi_blank.rnnt_multi_blank import (
@@ -199,7 +205,7 @@ class ESPnetASRModel(AbsESPnetModel):
                     token_list, sym_space, sym_blank, report_cer, report_wer
                 )
 
-        if ctc_weight == 0.0:
+        if ctc_weight == 0.0 and interctc_weight == 0.0:
             self.ctc = None
         else:
             self.ctc = ctc
@@ -264,20 +270,22 @@ class ESPnetASRModel(AbsESPnetModel):
             encoder_out = encoder_out[0]
 
         loss_att, acc_att, cer_att, wer_att = None, None, None, None
-        loss_ctc, cer_ctc = None, None
+        loss_ctc, cer_ctc, wer_ctc = None, None, None
+        loss_interctc_total = None
         loss_transducer, cer_transducer, wer_transducer = None, None, None
         loss_classif, acc_classif = None, None  # noqa
         stats = dict()
 
         # 1. CTC branch
         if self.ctc_weight != 0.0:
-            loss_ctc, cer_ctc = self._calc_ctc_loss(
+            loss_ctc, cer_ctc, wer_ctc = self._calc_ctc_loss(
                 encoder_out, encoder_out_lens, text, text_lengths
             )
 
             # Collect CTC branch stats
             stats["loss_ctc"] = loss_ctc.detach() if loss_ctc is not None else None
             stats["cer_ctc"] = cer_ctc
+            stats["wer_ctc"] = wer_ctc
 
         # Intermediate CTC (optional)
         loss_interctc = 0.0
@@ -296,7 +304,7 @@ class ESPnetASRModel(AbsESPnetModel):
                         aux_data_lengths = kwargs.get(aux_data_key + "_lengths", None)
 
                         if aux_data_tensor is not None and aux_data_lengths is not None:
-                            loss_ic, cer_ic = self._calc_ctc_loss(
+                            loss_ic, cer_ic, wer_ic = self._calc_ctc_loss(
                                 intermediate_out,
                                 encoder_out_lens,
                                 aux_data_tensor,
@@ -307,7 +315,7 @@ class ESPnetASRModel(AbsESPnetModel):
                                 "Aux. CTC tasks were specified but no data was found"
                             )
                 if loss_ic is None:
-                    loss_ic, cer_ic = self._calc_ctc_loss(
+                    loss_ic, cer_ic, wer_ic = self._calc_ctc_loss(
                         intermediate_out, encoder_out_lens, text, text_lengths
                     )
                 loss_interctc = loss_interctc + loss_ic
@@ -317,13 +325,16 @@ class ESPnetASRModel(AbsESPnetModel):
                     loss_ic.detach() if loss_ic is not None else None
                 )
                 stats["cer_interctc_layer{}".format(layer_idx)] = cer_ic
+                stats["wer_interctc_layer{}".format(layer_idx)] = wer_ic
 
             loss_interctc = loss_interctc / len(intermediate_outs)
+            loss_interctc_total = loss_interctc
 
-            # calculate whole encoder loss
-            loss_ctc = (
-                1 - self.interctc_weight
-            ) * loss_ctc + self.interctc_weight * loss_interctc
+            # calculate whole encoder loss (only if primary CTC loss exists)
+            if loss_ctc is not None:
+                loss_ctc = (
+                    1 - self.interctc_weight
+                ) * loss_ctc + self.interctc_weight * loss_interctc
 
         if self.use_transducer_decoder:
             # 2a. Transducer decoder branch
@@ -397,13 +408,14 @@ class ESPnetASRModel(AbsESPnetModel):
         self,
         speech: torch.Tensor,
         speech_lengths: torch.Tensor,
-        global_step: Optional[int],
+        global_step: Optional[int] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Frontend + Encoder. Note that this method is used by asr_inference.py
 
         Args:
             speech: (Batch, Length, ...)
             speech_lengths: (Batch, )
+            global_step: Current training step (optional, for gradual unfreezing)
         """
         with autocast(self.autocast_frontend, dtype=autocast_type):
             # 1. Extract feats
@@ -427,8 +439,10 @@ class ESPnetASRModel(AbsESPnetModel):
         if self.encoder is None:
             encoder_out, encoder_out_lens = feats, feats_lengths
         else:
+            # Apply gradual unfreezing if encoder supports it
             if global_step is not None and hasattr(self.encoder, "maybe_unfreeze"):
                 self.encoder.maybe_unfreeze(global_step)
+
             if getattr(self.encoder, "interctc_use_conditioning", False) or getattr(
                 self.encoder, "ctc_trim", False
             ):
@@ -623,12 +637,14 @@ class ESPnetASRModel(AbsESPnetModel):
         # Calc CTC loss
         loss_ctc = self.ctc(encoder_out, encoder_out_lens, ys_pad, ys_pad_lens)
 
-        # Calc CER using CTC
-        cer_ctc = None
+        # Calc CER/WER using CTC
+        cer_ctc, wer_ctc = None, None
         if not self.training and self.error_calculator is not None:
             ys_hat = self.ctc.argmax(encoder_out).data
-            cer_ctc = self.error_calculator(ys_hat.cpu(), ys_pad.cpu(), is_ctc=True)
-        return loss_ctc, cer_ctc
+            cer_ctc, wer_ctc = self.error_calculator(
+                ys_hat.cpu(), ys_pad.cpu(), is_ctc=True
+            )
+        return loss_ctc, cer_ctc, wer_ctc
 
     def _calc_transducer_loss(
         self,
