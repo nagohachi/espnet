@@ -10,7 +10,7 @@ valid_set="dev"
 test_sets="test_clean test_other dev_clean dev_other"
 
 asr_config=conf/train_wavlm_large_ctc.yaml
-inference_config=conf/decode_ctc_bs1.yaml
+inference_config=conf/tuning/decode_ctc_bs1.yaml
 
 current_time=$(date +"%m%d_%H%M")
 asr_args=(
