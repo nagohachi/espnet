@@ -12,7 +12,7 @@ keep_nbest_models: 10
 
 encoder: wavlm
 encoder_conf:
-    base_model: wavlm-large
+    base_model: microsoft/wavlm-large
     freeze_bottom_layers: 0
     freeze_feature_encoder: true
     initial_freeze_bottom_layers: -1

@@ -46,4 +46,5 @@ asr_args=(
     --test_sets "${test_sets}" \
     --asr_args "${asr_args[*]}" \
     --inference_asr_model valid.wer_ctc.best.pth \
+    --lm_train_text "data/${train_set}/text" \
      "$@"
