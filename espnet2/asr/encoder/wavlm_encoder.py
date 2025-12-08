@@ -12,7 +12,7 @@ from typeguard import typechecked
 from espnet2.asr.ctc import CTC
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
 
-SUPPORTED_MODELS = ("wavlm-large", "wavlm-base-plus")
+SUPPORTED_MODELS = ("microsoft/wavlm-large", "microsoft/wavlm-base-plus")
 
 
 def make_pad_mask(ilens: torch.Tensor, max_len: Optional[int] = None) -> torch.Tensor:
@@ -37,7 +37,9 @@ class WavLMEncoder(AbsEncoder):
     def __init__(
         self,
         input_size: int,
-        base_model: Literal["microsoft/wavlm-large", "microsoft/wavlm-base-plus"] = "microsoft/wavlm-large",
+        base_model: Literal[
+            "microsoft/wavlm-large", "microsoft/wavlm-base-plus"
+        ] = "microsoft/wavlm-large",
         freeze_bottom_layers: int = 0,
         freeze_feature_encoder: bool = True,
         gradual_unfreeze_steps: int = 0,
