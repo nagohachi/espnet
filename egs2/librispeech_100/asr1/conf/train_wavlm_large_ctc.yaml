@@ -1,6 +1,6 @@
 batch_type: numel
 batch_bins: 10000000
-accum_grad: 8
+accum_grad: 4
 max_epoch: 30
 patience: none
 init: none
@@ -15,7 +15,8 @@ encoder_conf:
     base_model: wavlm-large
     freeze_bottom_layers: 0
     freeze_feature_encoder: true
-    freeze_bottom_layers: 0
+    initial_freeze_bottom_layers: -1
+    gradual_unfreeze_steps: 1000
     hidden_dropout: 0.1
     feat_proj_dropout: 0.0
     mask_time_prob: 0.065
@@ -39,7 +40,7 @@ grad_clip: 1.0
 
 optim: adamw
 optim_conf:
-    lr: 3.0e-4
+    lr: 5.0e-4
     betas: [0.9, 0.999]
     eps: 1.0e-8
     weight_decay: 0.0
@@ -50,7 +51,7 @@ optim_conf:
 
 scheduler: warmuplr
 scheduler_conf:
-    warmup_steps: 250
+    warmup_steps: 500
 
 
 num_att_plot: 0
