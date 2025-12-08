@@ -1,5 +1,5 @@
 [project]
-name = "espnet"
+name = "espnet-local"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -11,17 +11,33 @@ dependencies = [
     "torchvision==0.22.1",
 ]
 
-[tool.uv.sources]
-torch = [
-    { index = "torch-cu128" }
-]
-torchaudio = [
-    { index = "torch-cu128" }
-]
-torchvision = [
-    { index = "torch-cu128" }
-]
-[[tool.uv.index]]
-name = "torch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.dependencies]
+python = "3.10.*"
+bc = ">=1.07.1"
+cmake = ">=3.22.1,<4.0"
+libflac = ">=1.4.3"
+sox = ">=14.4.2"
+libsndfile = ">=1.2.2"
+ffmpeg = ">=7.1"
+git = ">=2.0"
+pip = ">=20.0"
+make = "*"
+cxx-compiler = "*"
+wget = "*"
+tar = "*"
+setuptools = ">=38.5.1,<74.0.0"
+
+[tool.pixi.pypi-options]
+extra-index-urls = ["https://download.pytorch.org/whl/cu128"]
+index-strategy = "unsafe-best-match"
+
+[tool.pixi.pypi-dependencies]
+espnet-local = { path = ".", editable = true }
+torch = "==2.7.1"
+torchaudio = "==2.7.1"
+torchvision = "==0.22.1"
+lightning = ">=2.6.0"
