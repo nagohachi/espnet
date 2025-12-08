@@ -80,7 +80,6 @@ tools/lib64
 tools/bats-core
 tools/chainer_ctc/
 tools/kaldi*
-tools/activate_python.sh
 tools/miniconda.sh
 tools/moses/
 tools/mwerSegmenter/
@@ -124,3 +123,6 @@ tools/condarc
 tools/lightning_constraints.txt
 tools/versa
 tools/ParallelWaveGAN
+# pixi environments
+.pixi/*
+!.pixi/config.toml
