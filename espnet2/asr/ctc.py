@@ -92,19 +92,15 @@ class CTC(torch.nn.Module):
             Reduced loss tensor
         """
         if self.reduction_type == "mean":
-            # Normalize by target lengths (like PyTorch CTCLoss "mean")
-            # loss / target_length for each sample, then average over batch
             target_lengths_sum = th_olen.sum().float()
             if self.reduce:
                 loss = loss.sum() / target_lengths_sum
             else:
                 loss = loss / th_olen.float()
         elif self.reduction_type == "sum":
-            # No normalization, just sum
             if self.reduce:
                 loss = loss.sum()
-            # else: keep per-sample losses as-is
-        else:  # "batch_mean" (default, legacy behavior)
+        else:
             if self.reduce:
                 # Batch-size average
                 loss = loss.sum() / batch_size
