@@ -9,6 +9,7 @@ dependencies = [
     "torch==2.7.1",
     "torchaudio==2.7.1",
     "torchvision==0.22.1",
+    "espnet"
 ]
 
 [tool.uv.sources]
@@ -21,11 +22,9 @@ torchaudio = [
 torchvision = [
     { index = "torch-cu128" }
 ]
+espnet = { path = ".[train, recipe]", editable = true }
 
 [[tool.uv.index]]
 name = "torch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
 explicit = true
-
-[tool.uv.sources]
-espnet = { path = ".[train, recipe]", editable = true }
