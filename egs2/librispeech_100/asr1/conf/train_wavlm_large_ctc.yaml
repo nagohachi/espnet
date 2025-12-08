@@ -1,0 +1,66 @@
+batch_type: numel
+batch_bins: 10000000
+accum_grad: 8
+max_epoch: 30
+patience: none
+init: none
+best_model_criterion:
+-   - valid
+    - wer_ctc
+    - min
+keep_nbest_models: 10
+
+encoder: wavlm
+encoder_conf:
+    base_model: wavlm-large
+    freeze_bottom_layers: 0
+    freeze_feature_encoder: true
+    freeze_bottom_layers: 0
+    hidden_dropout: 0.1
+    feat_proj_dropout: 0.0
+    mask_time_prob: 0.065
+    mask_time_length: 10
+    mask_feature_prob: 0.008
+    mask_feature_length: 64
+    layerdrop: 0.1
+
+model_conf:
+    ctc_weight: 1.0
+    lsm_weight: 0.0
+    length_normalized_loss: false
+    report_cer: true
+    report_wer: true
+
+ctc_conf:
+    dropout_rate: 0.1
+    reduction_type: mean  # "batch_mean" (default), "mean" (normalize by target length), "sum"
+
+grad_clip: 1.0
+
+optim: adamw
+optim_conf:
+    lr: 3.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+    weight_decay: 0.0
+# scheduler: piecewiselinearwarmuplr
+# scheduler_conf:
+#     warmup_steps_list: [0, 250, 36000]
+#     warmup_lr_list: [0.0, 3.0e-4, 0.0]
+
+scheduler: warmuplr
+scheduler_conf:
+    warmup_steps: 250
+
+
+num_att_plot: 0
+
+frontend: huggingface_processor_only
+frontend_conf:
+    model: microsoft/wavlm-large
+
+normalize: null
+
+specaug: null
+
+unused_parameters: true
