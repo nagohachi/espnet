@@ -1,0 +1,30 @@
+[workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.10.*"
+bc = ">=1.07.1"
+cmake = ">=3.22.1,<4.0"
+libflac = ">=1.4.3"
+sox = ">=14.4.2"
+libsndfile = ">=1.2.2"
+ffmpeg = ">=7.1"
+git = ">=2.0"
+pip = ">=20.0"
+make = "*"
+cxx-compiler = "*"
+wget = "*"
+tar = "*"
+setuptools = ">=38.5.1,<74.0.0"
+
+[pypi-options]
+extra-index-urls = ["https://download.pytorch.org/whl/cu128"]
+index-strategy = "unsafe-best-match"
+
+[pypi-dependencies]
+espnet = { path = ".", editable = true, extras = ["all"] }
+torch = "==2.7.1"
+torchaudio = "==2.7.1"
+torchvision = "==0.22.1"
+lightning = ">=2.6.0"
