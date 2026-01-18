@@ -6,7 +6,7 @@
 
 import copy
 import logging
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Tuple, cast
 
 import torch
 import torch.nn.functional as F
@@ -17,7 +17,6 @@ from espnet2.legacy.nets.pytorch_backend.nets_utils import make_pad_mask
 
 try:
     from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
-    from transformers.utils.generic import ModelOutput
 
     is_transformers_available = True
 except ImportError:
@@ -43,7 +42,7 @@ class HuggingFaceTransformersDecoder(AbsDecoder, BatchScorerInterface):
         causal_lm: bool = False,
         prefix: str = "",
         postfix: str = "",
-        overriding_architecture_config: Optional[Union[str, dict]] = {},
+        overriding_architecture_config: dict[str, Any] = {},
         load_pretrained_weights: bool = True,
         separate_lm_head: bool = False,
     ):
@@ -105,22 +104,28 @@ class HuggingFaceTransformersDecoder(AbsDecoder, BatchScorerInterface):
             model = AutoModelForCausalLM.from_pretrained(
                 model_name_or_path, **self.overriding_architecture_config
             )
-            self.decoder = get_hugging_face_model_network(model)
+            self.decoder = cast(torch.nn.Module, get_hugging_face_model_network(model))
 
             if hasattr(self.decoder, "word_embeddings"):
-                self.decoder_word_embeddings = self.decoder.word_embeddings
+                self.decoder_word_embeddings = cast(
+                    torch.nn.Module, self.decoder.word_embeddings
+                )
             elif hasattr(self.decoder, "embed_in"):
-                self.decoder_word_embeddings = self.decoder.embed_in
+                self.decoder_word_embeddings = cast(
+                    torch.nn.Module, self.decoder.embed_in
+                )
             elif hasattr(self.decoder, "embed_tokens"):
-                self.decoder_word_embeddings = self.decoder.embed_tokens
+                self.decoder_word_embeddings = cast(
+                    torch.nn.Module, self.decoder.embed_tokens
+                )
             else:
                 raise Exception("Can not find the word embeddings attribute")
 
             if (
-                self.decoder.config.pad_token_id is not None
-                and self.decoder.config.pad_token_id != -1
+                self.decoder.config.pad_token_id is not None  # type: ignore
+                and self.decoder.config.pad_token_id != -1  # type: ignore
             ):
-                self.decoder_pad_token_id = self.decoder.config.pad_token_id
+                self.decoder_pad_token_id = self.decoder.config.pad_token_id  # type: ignore
             else:
                 self.decoder_pad_token_id = 1
 
@@ -147,18 +152,21 @@ class HuggingFaceTransformersDecoder(AbsDecoder, BatchScorerInterface):
         model.resize_token_embeddings(vocab_size)
 
         if self.separate_lm_head:
-            self.lm_head = copy.deepcopy(get_hugging_face_model_lm_head(model))
+            self.lm_head = cast(
+                torch.nn.Module, copy.deepcopy(get_hugging_face_model_lm_head(model))
+            )
         else:
-            self.lm_head = get_hugging_face_model_lm_head(model)
+            self.lm_head = cast(torch.nn.Module, get_hugging_face_model_lm_head(model))
 
         self.model_name_or_path = model_name_or_path
 
         self.decoder_pretrained_params = copy.deepcopy(self.decoder.state_dict())
         self.lm_head_pretrained_params = copy.deepcopy(self.lm_head.state_dict())
 
-        if encoder_output_size != self.decoder.config.hidden_size:
+        if encoder_output_size != cast(int, self.decoder.config.hidden_size):  # type: ignore
             self.linear_in = torch.nn.Linear(
-                encoder_output_size, self.decoder.config.hidden_size
+                encoder_output_size,
+                cast(int, self.decoder.config.hidden_size),  # type: ignore
             )
         else:
             self.linear_in = torch.nn.Identity()
@@ -191,7 +199,7 @@ class HuggingFaceTransformersDecoder(AbsDecoder, BatchScorerInterface):
                 enc_out, hlens, ys_in_pad, ys_in_lens
             )
         else:
-            args = {"return_dict": True}
+            args: dict = {"return_dict": True}
 
             if self.decoder.__class__.__name__ == "MBartDecoder":
                 ys_in_pad[:, 0] = 2
@@ -212,7 +220,7 @@ class HuggingFaceTransformersDecoder(AbsDecoder, BatchScorerInterface):
                     [
                         F.pad(
                             x[i, -ys_in_lens[i] :, :],
-                            (0, 0, 0, ys_in_lens.max() - ys_in_lens[i]),
+                            (0, 0, 0, int(ys_in_lens.max() - ys_in_lens[i])),
                         ).unsqueeze(0)
                         for i in range(x.shape[0])
                     ]
@@ -226,7 +234,7 @@ class HuggingFaceTransformersDecoder(AbsDecoder, BatchScorerInterface):
                                 no_loss_lengths[i] : no_loss_lengths[i] + ys_in_lens[i],
                                 :,
                             ],
-                            (0, 0, 0, ys_in_lens.max() - ys_in_lens[i]),
+                            (0, 0, 0, int(ys_in_lens.max() - ys_in_lens[i])),
                         ).unsqueeze(0)
                         for i in range(x.shape[0])
                     ]
@@ -293,53 +301,56 @@ class HuggingFaceTransformersDecoder(AbsDecoder, BatchScorerInterface):
 
         return args, no_loss_lengths
 
-    def score(self, ys, state, x, speech=None):
-        model_kwargs = {
-            "encoder_outputs": ModelOutput(
-                last_hidden_state=self.linear_in(x).unsqueeze(0)
-            ),
-        }
-        # TODO(brian): caching
-        model_inputs = self.hf_generate.prepare_inputs_for_generation(
-            ys.unsqueeze(0), **model_kwargs
-        )
-        outputs = self.hf_generate(
-            **model_inputs,
-            return_dict=True,
-            output_attentions=False,
-            output_hidden_states=False,
-        )
-        next_token_logits = outputs.logits[:, -1, :]
-        next_token_scores = torch.nn.functional.log_softmax(
-            next_token_logits, dim=-1
-        )  # (batch_size * num_beams, vocab_size)
-        return next_token_scores.squeeze(0), None
+    # Note: `score` and `batch_score` are used only for ST tasks, and hf_generate is injected in the inference script
+    # comment out for simplicity
 
-    def batch_score(
-        self,
-        ys: torch.Tensor,
-        states: List[Any],
-        xs: torch.Tensor,
-        speech: torch.Tensor = None,
-    ) -> Tuple[torch.Tensor, List[Any]]:
-        # import pdb;pdb.set_trace()
-        model_kwargs = {
-            "encoder_outputs": ModelOutput(last_hidden_state=self.linear_in(xs)),
-        }
-        model_inputs = self.hf_generate.prepare_inputs_for_generation(
-            ys, **model_kwargs
-        )
-        outputs = self.hf_generate(
-            **model_inputs,
-            return_dict=True,
-            output_attentions=False,
-            output_hidden_states=False,
-        )
-        next_token_logits = outputs.logits[:, -1, :]
-        next_token_scores = torch.nn.functional.log_softmax(
-            next_token_logits, dim=-1
-        )  # (batch_size * num_beams, vocab_size)
-        return next_token_scores, None
+    # def score(self, ys, state, x, speech=None):
+    #     model_kwargs = {
+    #         "encoder_outputs": ModelOutput(
+    #             last_hidden_state=self.linear_in(x).unsqueeze(0)
+    #         ),
+    #     }
+    #     # TODO(brian): caching
+    #     model_inputs = self.hf_generate.prepare_inputs_for_generation(
+    #         ys.unsqueeze(0), **model_kwargs
+    #     )
+    #     outputs = self.hf_generate(
+    #         **model_inputs,
+    #         return_dict=True,
+    #         output_attentions=False,
+    #         output_hidden_states=False,
+    #     )
+    #     next_token_logits = outputs.logits[:, -1, :]
+    #     next_token_scores = torch.nn.functional.log_softmax(
+    #         next_token_logits, dim=-1
+    #     )  # (batch_size * num_beams, vocab_size)
+    #     return next_token_scores.squeeze(0), None
+
+    # def batch_score(
+    #     self,
+    #     ys: torch.Tensor,
+    #     states: List[Any],
+    #     xs: torch.Tensor,
+    #     speech: torch.Tensor = None,
+    # ) -> Tuple[torch.Tensor, List[Any]]:
+    #     # import pdb;pdb.set_trace()
+    #     model_kwargs = {
+    #         "encoder_outputs": ModelOutput(last_hidden_state=self.linear_in(xs)),
+    #     }
+    #     model_inputs = self.hf_generate.prepare_inputs_for_generation(
+    #         ys, **model_kwargs
+    #     )
+    #     outputs = self.hf_generate(
+    #         **model_inputs,
+    #         return_dict=True,
+    #         output_attentions=False,
+    #         output_hidden_states=False,
+    #     )
+    #     next_token_logits = outputs.logits[:, -1, :]
+    #     next_token_scores = torch.nn.functional.log_softmax(
+    #         next_token_logits, dim=-1
+    #     )  # (batch_size * num_beams, vocab_size)
+    #     return next_token_scores, None
 
 
 def get_hugging_face_model_network(model):
