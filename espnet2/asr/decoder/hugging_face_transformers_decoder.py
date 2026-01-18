@@ -6,7 +6,7 @@
 
 import copy
 import logging
-from typing import Any, Tuple, cast
+from typing import Any, Optional, Tuple, cast
 
 import torch
 import torch.nn.functional as F
@@ -22,6 +22,9 @@ try:
 except ImportError:
     is_transformers_available = False
 
+from peft import LoraConfig, TaskType, get_peft_model
+
+
 class HuggingFaceTransformersDecoder(AbsDecoder):
     """Hugging Face Transformers Decoder.
 
@@ -36,6 +39,9 @@ class HuggingFaceTransformersDecoder(AbsDecoder):
         vocab_size: int,
         encoder_output_size: int,
         model_name_or_path: str,
+        lora_r: Optional[int],
+        lora_alpha: Optional[int],
+        lora_dropout: Optional[float],
         causal_lm: bool = False,
         prefix: str = "",
         postfix: str = "",
@@ -170,6 +176,20 @@ class HuggingFaceTransformersDecoder(AbsDecoder):
             )
         else:
             self.linear_in = torch.nn.Identity()
+
+        if lora_r is not None or lora_alpha is not None or lora_dropout is not None:
+            assert (
+                lora_r is not None
+                and lora_alpha is not None
+                and lora_dropout is not None
+            )
+            peft_config = LoraConfig(
+                task_type=TaskType.CAUSAL_LM,
+                r=lora_r,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+            )
+            model = get_peft_model(model, peft_config)
 
     def forward(
         self,
