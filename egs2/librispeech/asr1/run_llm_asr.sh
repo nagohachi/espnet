@@ -16,6 +16,17 @@ inference_config=conf/decode_asr.yaml
 token_type=hugging_face
 hugging_face_model_name_or_path="meta-llama/Llama-3.2-3B-Instruct"
 
+current_datetime=$(date +"%m%d_%H%M")
+asr_tag="wavlm_llama3b_libri_${current_datetime}"
+
+asr_args=(
+    "--num_workers 12"
+    "--log_interval 100"
+    "--use_wandb true"
+    "--wandb_project llm-asr"
+    "--wandb_name ${asr_tag}"
+)
+
 ./asr.sh \
     --lang en \
     --ngpu 2 \
@@ -29,5 +40,7 @@ hugging_face_model_name_or_path="meta-llama/Llama-3.2-3B-Instruct"
     --test_sets "${test_sets}" \
     --use_lm false \
     --cleaner none \
+    --nj 64 \
+    --inference_nj 32 \
     --speed_perturb_factors "0.9 1.0 1.1" \
     "$@"
