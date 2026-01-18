@@ -17,7 +17,7 @@ from espnet2.legacy.nets.pytorch_backend.nets_utils import make_pad_mask
 
 try:
     from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
-    from transformers.file_utils import ModelOutput
+    from transformers.utils.generic import ModelOutput
 
     is_transformers_available = True
 except ImportError:
