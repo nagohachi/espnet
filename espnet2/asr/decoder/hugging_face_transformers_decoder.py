@@ -22,10 +22,7 @@ try:
 except ImportError:
     is_transformers_available = False
 
-from espnet2.legacy.nets.scorer_interface import BatchScorerInterface
-
-
-class HuggingFaceTransformersDecoder(AbsDecoder, BatchScorerInterface):
+class HuggingFaceTransformersDecoder(AbsDecoder):
     """Hugging Face Transformers Decoder.
 
     Args:
@@ -42,7 +39,7 @@ class HuggingFaceTransformersDecoder(AbsDecoder, BatchScorerInterface):
         causal_lm: bool = False,
         prefix: str = "",
         postfix: str = "",
-        overriding_architecture_config: dict[str, Any] = {},
+        overriding_architecture_config: dict[str, Any] | str | None = None,
         load_pretrained_weights: bool = True,
         separate_lm_head: bool = False,
     ):
@@ -91,12 +88,15 @@ class HuggingFaceTransformersDecoder(AbsDecoder, BatchScorerInterface):
         self.load_pretrained_weights = load_pretrained_weights
         self.separate_lm_head = separate_lm_head
 
-        self.overriding_architecture_config = overriding_architecture_config
-        if isinstance(overriding_architecture_config, str):
+        if overriding_architecture_config is None:
+            self.overriding_architecture_config: dict[str, Any] = {}
+        elif isinstance(overriding_architecture_config, str):
             # It is path to a json config file
             self.overriding_architecture_config = read_json_config(
                 overriding_architecture_config
             )
+        else:
+            self.overriding_architecture_config = overriding_architecture_config
 
         self.causal_lm = causal_lm
 
@@ -119,7 +119,7 @@ class HuggingFaceTransformersDecoder(AbsDecoder, BatchScorerInterface):
                     torch.nn.Module, self.decoder.embed_tokens
                 )
             else:
-                raise Exception("Can not find the word embeddings attribute")
+                raise AttributeError("Can not find the word embeddings attribute")
 
             if (
                 self.decoder.config.pad_token_id is not None  # type: ignore
@@ -361,7 +361,7 @@ def get_hugging_face_model_network(model):
     elif hasattr(model, "model"):
         network = model.model
     else:
-        raise Exception("Can not find the network attribute")
+        raise AttributeError("Can not find the network attribute")
 
     return network
 
@@ -372,7 +372,7 @@ def get_hugging_face_model_lm_head(model):
     elif hasattr(model, "embed_out"):
         lm_head = model.embed_out
     else:
-        raise Exception("Can not find the LM head attribute")
+        raise AttributeError("Can not find the LM head attribute")
 
     return lm_head
 
@@ -387,7 +387,7 @@ def read_json_config(conf_path):
     """
     import json
 
-    with open(conf_path, "rb") as f:
+    with open(conf_path, "r", encoding="utf-8") as f:
         logging.info("Reading config file from " + conf_path)
         confs = json.load(f)
     assert isinstance(confs, dict)
