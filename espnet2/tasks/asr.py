@@ -66,6 +66,9 @@ from espnet2.asr.frontend.windowing import SlidingWindow
 from espnet2.asr.maskctc_model import MaskCTCModel
 from espnet2.asr.pit_espnet_model import ESPnetASRModel as PITESPnetModel
 from espnet2.asr.postencoder.abs_postencoder import AbsPostEncoder
+from espnet2.asr.postencoder.frame_stacking_postencoder import (
+    FrameStackingMLP2PostEncoder,
+)
 from espnet2.asr.postencoder.hugging_face_transformers_postencoder import (
     HuggingFaceTransformersPostEncoder,
 )
@@ -181,6 +184,7 @@ postencoder_choices = ClassChoices(
     classes=dict(
         hugging_face_transformers=HuggingFaceTransformersPostEncoder,
         length_adaptor=LengthAdaptorPostEncoder,
+        frame_stacking_mlp2=FrameStackingMLP2PostEncoder,
     ),
     type_check=AbsPostEncoder,
     default=None,
@@ -330,7 +334,7 @@ class ASRTask(AbsTask):
                 "whisper_en",
                 "whisper_multilingual",
             ],
-            help="The text will be tokenized " "in the specified level token",
+            help="The text will be tokenized in the specified level token",
         )
         group.add_argument(
             "--bpemodel",
@@ -422,7 +426,9 @@ class ASRTask(AbsTask):
 
     @classmethod
     @typechecked
-    def build_collate_fn(cls, args: argparse.Namespace, train: bool) -> Callable[
+    def build_collate_fn(
+        cls, args: argparse.Namespace, train: bool
+    ) -> Callable[
         [Collection[Tuple[str, Dict[str, np.ndarray]]]],
         Tuple[List[str], Dict[str, torch.Tensor]],
     ]:
