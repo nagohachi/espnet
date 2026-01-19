@@ -9,7 +9,7 @@ train_set="train_960"
 valid_set="dev"
 test_sets="test_clean test_other dev_clean dev_other"
 
-asr_config=conf/llm_asr/train_asr_wavlm-large_llama-3.2-3b-it.yaml
+asr_config=conf/llm_asr/train_asr_wavlm-large_llama-3.2-3b-it_test.yaml
 inference_config=conf/decode_asr.yaml
 
 # Llama 3.2 tokenizer
@@ -40,7 +40,9 @@ asr_args=(
     --test_sets "${test_sets}" \
     --use_lm false \
     --cleaner none \
+    --feats_normalize none \
     --nj 64 \
     --inference_nj 32 \
     --speed_perturb_factors "0.9 1.0 1.1" \
+    --lm_train_text "dump/raw/org/${train_set}_sp/text" \
     "$@"
