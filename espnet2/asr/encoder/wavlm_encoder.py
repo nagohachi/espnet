@@ -288,7 +288,8 @@ class WavLMEncoder(AbsEncoder):
         use_inference_mode: bool,
     ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """Standard forward pass without intermediate CTC."""
-        context = torch.inference_mode() if use_inference_mode else nullcontext()
+        # Use no_grad instead of inference_mode for DDP compatibility
+        context = torch.no_grad() if use_inference_mode else nullcontext()
         with context:
             enc_outputs: WavLMBaseModelOutput = self.model(
                 input_values=xs_pad,
@@ -316,7 +317,8 @@ class WavLMEncoder(AbsEncoder):
         Optional[torch.Tensor],
     ]:
         """Forward pass with intermediate CTC outputs (no conditioning)."""
-        context = torch.inference_mode() if use_inference_mode else nullcontext()
+        # Use no_grad instead of inference_mode for DDP compatibility
+        context = torch.no_grad() if use_inference_mode else nullcontext()
         with context:
             enc_outputs: WavLMBaseModelOutput = self.model(
                 input_values=xs_pad,
@@ -363,7 +365,8 @@ class WavLMEncoder(AbsEncoder):
         # So we disable inference_mode if conditioning_layer exists
         if self.conditioning_layer is not None:
             use_inference_mode = False
-        context = torch.inference_mode() if use_inference_mode else nullcontext()
+        # Use no_grad instead of inference_mode for DDP compatibility
+        context = torch.no_grad() if use_inference_mode else nullcontext()
 
         with context:
             # Step 1: Feature extraction
