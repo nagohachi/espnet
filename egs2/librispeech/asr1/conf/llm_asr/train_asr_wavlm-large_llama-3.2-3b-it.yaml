@@ -1,5 +1,5 @@
 batch_type: numel
-batch_bins: 1500000
+batch_bins: 200000000
 accum_grad: 2
 max_epoch: 5
 patience: none
@@ -47,6 +47,9 @@ model_conf:
     length_normalized_loss: true
     report_cer: true
     report_wer: true
+    sym_space: "Ġ"
+    sym_eos: "<|eot_id|>"                                                         
+    sym_sos: "<|begin_of_text|>" 
 
 grad_clip: 1.0
 
