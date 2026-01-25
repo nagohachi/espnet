@@ -9,7 +9,7 @@ train_set="train_960"
 valid_set="dev"
 test_sets="test_clean test_other dev_clean dev_other"
 
-asr_config=conf/llm_asr/train_asr_wavlm-large_llama-3.2-3b-it_test.yaml
+asr_config=conf/llm_asr/train_asr_wavlm-large_llama-3.2-3b-it.yaml
 inference_config=conf/decode_asr.yaml
 
 # Llama 3.2 tokenizer
@@ -20,9 +20,10 @@ current_datetime=$(date +"%m%d_%H%M")
 asr_tag="wavlm_llama3b_libri_${current_datetime}"
 
 asr_args=(
-    "--num_workers 12"
+    "--num_workers 4"
     "--log_interval 100"
     "--use_wandb true"
+    "--dist_backend gloo"
     "--wandb_project llm-asr"
     "--wandb_name ${asr_tag}"
 )
@@ -45,4 +46,6 @@ asr_args=(
     --inference_nj 32 \
     --speed_perturb_factors "0.9 1.0 1.1" \
     --lm_train_text "dump/raw/org/${train_set}_sp/text" \
+    --asr_tag "${asr_tag}" \
+    --asr_args "${asr_args[*]}" \
     "$@"
