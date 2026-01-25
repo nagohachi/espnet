@@ -17,7 +17,6 @@ class HuggingFaceTokenIDConverter:
         self,
         model_name_or_path: str,
     ):
-
         if not is_transformers_available:
             raise ImportError(
                 "`transformers` is not available. Please install it via `pip install"
@@ -28,7 +27,8 @@ class HuggingFaceTokenIDConverter:
         self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
 
     def get_num_vocabulary_size(self) -> int:
-        return self.tokenizer.vocab_size
+        # Use len() to include special tokens
+        return len(self.tokenizer)
 
     def ids2tokens(self, integers: Union[np.ndarray, Iterable[int]]) -> List[str]:
         return self.tokenizer.convert_ids_to_tokens(integers)
