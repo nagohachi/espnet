@@ -38,6 +38,7 @@ dependencies = [
     "kaldiio>=2.18.0",
     "sentencepiece==0.2.0",
     "librosa>=0.10.2",
+    "resampy",
     "lightning",
     "torch_complex",
     "tensorboard>=1.14",
