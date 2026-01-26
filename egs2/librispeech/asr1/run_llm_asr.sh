@@ -7,10 +7,10 @@ set -o pipefail
 
 train_set="train_960"
 valid_set="dev"
-test_sets="test_clean test_other dev_clean dev_other"
+test_sets="test_clean test_other"
 
 asr_config=conf/llm_asr/train_asr_wavlm-large_llama-3.2-3b-it.yaml
-inference_config=conf/decode_asr.yaml
+inference_config=conf/llm_asr/decode_asr_llm.yaml
 
 # Llama 3.2 tokenizer
 token_type=hugging_face
@@ -43,7 +43,8 @@ asr_args=(
     --cleaner none \
     --feats_normalize none \
     --nj 64 \
-    --inference_nj 32 \
+    --inference_nj 1 \
+    --gpu_inference true \
     --speed_perturb_factors "0.9 1.0 1.1" \
     --lm_train_text "dump/raw/org/${train_set}_sp/text" \
     --asr_tag "${asr_tag}" \
