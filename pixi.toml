@@ -17,6 +17,7 @@ cxx-compiler = "*"
 wget = "*"
 tar = "*"
 setuptools = ">=38.5.1,<74.0.0"
+sctk = ">=2.4.12,<3"
 
 [pypi-options]
 extra-index-urls = ["https://download.pytorch.org/whl/cu128"]
