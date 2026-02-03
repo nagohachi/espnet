@@ -256,21 +256,26 @@ class Speech2Text:
                 )
 
             if decoder.causal_lm:
-                hugging_face_model = AutoModelForCausalLM.from_pretrained(
-                    decoder.model_name_or_path, **decoder.overriding_architecture_config
-                )
-
-                hugging_face_model.resize_token_embeddings(decoder.lm_head.out_features)
-
-                transformer = get_hugging_face_model_network(hugging_face_model)
-                transformer.load_state_dict(decoder.decoder.state_dict())
-                if decoder.separate_lm_head:
-                    lm_head = copy.deepcopy(
-                        get_hugging_face_model_lm_head(hugging_face_model)
-                    )
+                # For PEFT/LoRA models, use the trained model directly
+                # instead of loading a new model and transferring state_dict
+                if hasattr(decoder, "use_peft") and decoder.use_peft:
+                    hugging_face_model = decoder.llm
                 else:
-                    lm_head = get_hugging_face_model_lm_head(hugging_face_model)
-                lm_head.load_state_dict(decoder.lm_head.state_dict())
+                    hugging_face_model = AutoModelForCausalLM.from_pretrained(
+                        decoder.model_name_or_path, **decoder.overriding_architecture_config
+                    )
+
+                    hugging_face_model.resize_token_embeddings(decoder.lm_head.out_features)
+
+                    transformer = get_hugging_face_model_network(hugging_face_model)
+                    transformer.load_state_dict(decoder.decoder.state_dict())
+                    if decoder.separate_lm_head:
+                        lm_head = copy.deepcopy(
+                            get_hugging_face_model_lm_head(hugging_face_model)
+                        )
+                    else:
+                        lm_head = get_hugging_face_model_lm_head(hugging_face_model)
+                    lm_head.load_state_dict(decoder.lm_head.state_dict())
             else:
                 hugging_face_model = AutoModelForSeq2SeqLM.from_pretrained(
                     decoder.model_name_or_path, **decoder.overriding_architecture_config
@@ -291,24 +296,13 @@ class Speech2Text:
                     )
                     del hugging_face_model.encoder
 
-            del asr_model.decoder.lm_head
-            del asr_model.decoder.decoder
+            # Skip deletion for PEFT models since we use decoder.llm directly
+            if not (hasattr(decoder, "use_peft") and decoder.use_peft):
+                del asr_model.decoder.lm_head
+                del asr_model.decoder.decoder
 
             hugging_face_linear_in = decoder.linear_in
             hugging_face_model.to(device=device).eval()
-
-            if "num_beams" not in hugging_face_decoder_conf:
-                hugging_face_decoder_conf["num_beams"] = (
-                    hugging_face_model.config.num_beams
-                )
-
-            if (
-                hugging_face_model.config.pad_token_id is None
-                and "pad_token_id" not in hugging_face_decoder_conf
-            ):
-                hugging_face_decoder_conf["pad_token_id"] = (
-                    hugging_face_model.config.eos_token_id
-                )
 
             beam_search = None
             beam_search_transducer = None
@@ -604,32 +598,25 @@ class Speech2Text:
                 "best hypo: " + "".join(self.converter.ids2tokens(best.yseq[1:])) + "\n"
             )
         elif self.hugging_face_model:
-            num_beams = self.hugging_face_decoder_conf["num_beams"]
             enc = self.hugging_face_linear_in(enc).unsqueeze(0)
             if self.asr_model.decoder.causal_lm:
-                forward_args, _ = self.asr_model.decoder.add_prefix_postfix(
-                    enc,
-                    torch.tensor([enc.shape[1]]).to(enc.device),
-                    torch.ones([1, 1], dtype=int, device=enc.device),
-                    torch.ones([1], dtype=int, device=enc.device),
+                # Build prefix/postfix embeddings
+                prefix_embeds = self.asr_model.decoder._get_embed_tokens(
+                    self.asr_model.decoder.prefix_ids.to(enc.device)
+                )
+                postfix_embeds = self.asr_model.decoder._get_embed_tokens(
+                    self.asr_model.decoder.postfix_ids.to(enc.device)
                 )
 
-                # input_ids are ignored if we provide inputs_embeds,
-                # but input_ids are still required, so we make fake ones
-                input_ids = torch.ones(
-                    [1, forward_args["inputs_embeds"].shape[1]],
-                    dtype=int,
-                    device=enc.device,
-                )
+                # Concat: prefix + encoder_out + postfix
+                inputs_embeds = torch.cat([prefix_embeds, enc, postfix_embeds], dim=1)
+                attention_mask = torch.ones(inputs_embeds.shape[:2], device=enc.device)
 
                 yseq = self.hugging_face_model.generate(
-                    input_ids.repeat(num_beams, 1),
-                    inputs_embeds=forward_args["inputs_embeds"].repeat(num_beams, 1, 1),
-                    attention_mask=input_ids.repeat(num_beams, 1),
+                    inputs_embeds=inputs_embeds,
+                    attention_mask=attention_mask,
                     **self.hugging_face_decoder_conf,
                 )
-
-                yseq = yseq[:, input_ids.shape[1] - 1 :]
             else:
                 decoder_start_token_id = (
                     self.hugging_face_model.config.decoder_start_token_id
@@ -640,14 +627,25 @@ class Speech2Text:
                     **self.hugging_face_decoder_conf,
                 )
 
-            nbest_hyps = [Hypothesis(yseq=yseq[0])]
-            logging.info(
-                "best hypo: "
-                + self.tokenizer.tokens2text(
-                    self.converter.ids2tokens(nbest_hyps[0].yseq[1:])
-                )
-                + "\n"
-            )
+            # HuggingFace generate returns only new tokens (no SOS prefix)
+            # Process results directly here instead of going through the common loop
+            token_int = yseq[0].tolist()
+            # Remove EOS tokens
+            eos_ids = self.hugging_face_decoder_conf.get("eos_token_id", [])
+            if isinstance(eos_ids, int):
+                eos_ids = [eos_ids]
+            token_int = [t for t in token_int if t not in eos_ids]
+
+            token = self.converter.ids2tokens(token_int)
+            if self.tokenizer is not None:
+                text = self.tokenizer.tokens2text(token)
+            else:
+                text = None
+
+            logging.info("best hypo: " + (text or "") + "\n")
+
+            hyp = Hypothesis(yseq=yseq[0])
+            return [(text, token, token_int, hyp)]
         else:
             if hasattr(self.beam_search.nn_dict, "decoder"):
                 if isinstance(self.beam_search.nn_dict.decoder, S4Decoder):

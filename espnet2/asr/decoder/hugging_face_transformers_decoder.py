@@ -125,6 +125,9 @@ class HuggingFaceTransformersDecoder(AbsDecoder):
             )
 
             hidden_size = config.hidden_size
+
+            # Set self.decoder for causal_lm to enable state_dict loading in inference
+            self.decoder = get_hugging_face_model_network(model)
         else:
             # For Seq2Seq models
             if hasattr(model, "model"):
@@ -143,7 +146,8 @@ class HuggingFaceTransformersDecoder(AbsDecoder):
                 torch.nn.Module, copy.deepcopy(get_hugging_face_model_lm_head(model))
             )
         else:
-            self.lm_head = None
+            # Always keep a reference to lm_head for inference compatibility
+            self.lm_head = get_hugging_face_model_lm_head(model)
 
     def _get_embed_tokens(self, input_ids: torch.Tensor) -> torch.Tensor:
         """Get embeddings by navigating through model hierarchy.
@@ -338,6 +342,40 @@ def get_hugging_face_model_lm_head(model):
     if hasattr(model, "embed_out"):
         return model.embed_out
     raise AttributeError("Can not find the LM head attribute")
+
+
+def get_hugging_face_model_network(model):
+    """Get transformer network from model, handling PEFT wrapper.
+
+    Returns the underlying transformer model (without lm_head).
+    """
+    # For Llama-style models: model.model
+    if hasattr(model, "model") and hasattr(model.model, "embed_tokens"):
+        return model.model
+    # For PEFT-wrapped Llama: model.model.model
+    if (
+        hasattr(model, "model")
+        and hasattr(model.model, "model")
+        and hasattr(model.model.model, "embed_tokens")
+    ):
+        return model.model.model
+    # For deeper PEFT wrapping
+    if (
+        hasattr(model, "model")
+        and hasattr(model.model, "model")
+        and hasattr(model.model.model, "model")
+        and hasattr(model.model.model.model, "embed_tokens")
+    ):
+        return model.model.model.model
+    # For GPT-style models: model.transformer
+    if hasattr(model, "transformer"):
+        return model.transformer
+    # For GPT-NeoX style: model.gpt_neox
+    if hasattr(model, "gpt_neox"):
+        return model.gpt_neox
+    raise AttributeError(
+        f"Cannot find transformer network in model structure: {type(model)}"
+    )
 
 
 def read_json_config(conf_path):
