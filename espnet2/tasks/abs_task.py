@@ -586,6 +586,13 @@ class AbsTask(ABC):
             help="The epoch interval to apply model averaging and save nbest models",
         )
         group.add_argument(
+            "--validation_interval_steps",
+            type=int_or_none,
+            default=None,
+            help="Run validation every N training steps within an epoch "
+            "and save step-level checkpoints.",
+        )
+        group.add_argument(
             "--grad_clip",
             type=float,
             default=5.0,
