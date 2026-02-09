@@ -73,6 +73,45 @@ except Exception:
     s3prl = None
 
 
+class StepCheckpointTracker:
+    """Tracks step-level checkpoint metadata for intra-epoch validation."""
+
+    def __init__(self):
+        # Each entry: (epoch, step, metric_name, metric_value, filename)
+        self.entries: List[Tuple[int, int, str, float, str]] = []
+
+    def add(
+        self,
+        epoch: int,
+        step: int,
+        metric_name: str,
+        metric_value: float,
+        filename: str,
+    ):
+        self.entries.append((epoch, step, metric_name, metric_value, filename))
+
+    def get_best(self, mode: str) -> Optional[Tuple[int, int, str, float, str]]:
+        if not self.entries:
+            return None
+        if mode == "min":
+            return min(self.entries, key=lambda e: e[3])
+        else:
+            return max(self.entries, key=lambda e: e[3])
+
+    def get_nbest_filenames(self, n: int, mode: str) -> set:
+        if not self.entries:
+            return set()
+        reverse = mode == "max"
+        sorted_entries = sorted(self.entries, key=lambda e: e[3], reverse=reverse)
+        return {e[4] for e in sorted_entries[:n]}
+
+    def state_dict(self) -> dict:
+        return {"entries": list(self.entries)}
+
+    def load_state_dict(self, state: dict):
+        self.entries = [tuple(e) for e in state.get("entries", [])]
+
+
 @dataclasses.dataclass
 class TrainerOptions:
     ngpu: int
@@ -106,6 +145,7 @@ class TrainerOptions:
     create_graph_in_tensorboard: bool
     gradient_as_bucket_view: bool
     ddp_comm_hook: Optional[str]
+    validation_interval_steps: Optional[int]
 
 
 class Trainer:
@@ -231,6 +271,12 @@ class Trainer:
                 print("Please install S3PRL: cd ${MAIN_ROOT}/tools && make s3prl.done")
                 raise RuntimeError("Requiring S3PRL. ")
 
+        # Initialize step-level checkpoint tracker
+        step_checkpoint_tracker = StepCheckpointTracker()
+        validation_interval_steps = getattr(
+            trainer_options, "validation_interval_steps", None
+        )
+
         if trainer_options.resume and (output_dir / "checkpoint.pth").exists():
             cls.resume(
                 checkpoint=output_dir / "checkpoint.pth",
@@ -242,6 +288,22 @@ class Trainer:
                 ngpu=trainer_options.ngpu,
                 strict=not use_adapter,
             )
+            # Restore step checkpoint tracker state if available
+            if validation_interval_steps is not None:
+                states = torch.load(
+                    output_dir / "checkpoint.pth",
+                    map_location="cpu",
+                    weights_only=False,
+                )
+                if "step_checkpoint_tracker" in states:
+                    step_checkpoint_tracker.load_state_dict(
+                        states["step_checkpoint_tracker"]
+                    )
+                    logging.info(
+                        "Restored step checkpoint tracker with "
+                        f"{len(step_checkpoint_tracker.entries)} entries"
+                    )
+                del states
 
         start_epoch = reporter.get_epoch() + 1
         if start_epoch == trainer_options.max_epoch + 1:
@@ -350,6 +412,22 @@ class Trainer:
                     summary_writer=train_summary_writer,
                     options=trainer_options,
                     distributed_option=distributed_option,
+                    valid_iter_factory=(
+                        valid_iter_factory
+                        if validation_interval_steps is not None
+                        else None
+                    ),
+                    step_checkpoint_tracker=(
+                        step_checkpoint_tracker
+                        if validation_interval_steps is not None
+                        else None
+                    ),
+                    output_dir=(
+                        output_dir
+                        if validation_interval_steps is not None
+                        else None
+                    ),
+                    iepoch=iepoch,
                 )
 
             torch.cuda.empty_cache()
@@ -421,19 +499,21 @@ class Trainer:
                             if not p.requires_grad:
                                 model_state_dict.pop(n)
 
-                torch.save(
-                    {
-                        "model": model_state_dict,
-                        "reporter": reporter.state_dict(),
-                        "optimizers": [o.state_dict() for o in optimizers],
-                        "schedulers": [
-                            s.state_dict() if s is not None else None
-                            for s in schedulers
-                        ],
-                        "scaler": scaler.state_dict() if scaler is not None else None,
-                    },
-                    output_dir / "checkpoint.pth",
-                )
+                checkpoint_dict = {
+                    "model": model_state_dict,
+                    "reporter": reporter.state_dict(),
+                    "optimizers": [o.state_dict() for o in optimizers],
+                    "schedulers": [
+                        s.state_dict() if s is not None else None
+                        for s in schedulers
+                    ],
+                    "scaler": scaler.state_dict() if scaler is not None else None,
+                }
+                if validation_interval_steps is not None:
+                    checkpoint_dict["step_checkpoint_tracker"] = (
+                        step_checkpoint_tracker.state_dict()
+                    )
+                torch.save(checkpoint_dict, output_dir / "checkpoint.pth")
 
                 # 5. Save and log the model and update the link to the best model
                 torch.save(model_state_dict, output_dir / f"{iepoch}epoch.pth")
@@ -515,6 +595,37 @@ class Trainer:
                 if len(_removed) != 0:
                     logging.info("The model files were removed: " + ", ".join(_removed))
 
+                # 6b. Remove step-level checkpoint files excluding n-best
+                if (
+                    validation_interval_steps is not None
+                    and step_checkpoint_tracker.entries
+                ):
+                    # Find the first valid-phase metric to determine mode
+                    _step_mode = None
+                    for _phase, _k, _mode in trainer_options.best_model_criterion:
+                        if _phase == "valid":
+                            _step_mode = _mode
+                            break
+                    if _step_mode is not None:
+                        step_nbest_files = (
+                            step_checkpoint_tracker.get_nbest_filenames(
+                                max(keep_nbest_models), _step_mode
+                            )
+                        )
+                        _step_removed = []
+                        for entry in list(step_checkpoint_tracker.entries):
+                            fname = entry[4]
+                            if fname not in step_nbest_files:
+                                p = output_dir / fname
+                                if p.exists():
+                                    p.unlink()
+                                    _step_removed.append(str(p))
+                        if _step_removed:
+                            logging.info(
+                                "Step checkpoint files removed: "
+                                + ", ".join(_step_removed)
+                            )
+
             # 7. If any updating haven't happened, stops the training
             if all_steps_are_invalid:
                 logging.warning(
@@ -557,6 +668,10 @@ class Trainer:
         summary_writer,
         options: TrainerOptions,
         distributed_option: DistributedOption,
+        valid_iter_factory: Optional[AbsIterFactory] = None,
+        step_checkpoint_tracker: Optional[StepCheckpointTracker] = None,
+        output_dir: Optional[Path] = None,
+        iepoch: int = 0,
     ) -> bool:
         grad_noise = options.grad_noise
         accum_grad = options.accum_grad
@@ -568,6 +683,9 @@ class Trainer:
         use_wandb = options.use_wandb
         create_graph_in_tensorboard = options.create_graph_in_tensorboard
         distributed = distributed_option.distributed
+        validation_interval_steps = getattr(
+            options, "validation_interval_steps", None
+        )
 
         if log_interval is None:
             try:
@@ -814,11 +932,152 @@ class Trainer:
                 if use_wandb:
                     reporter.wandb_log()
 
+            # Step-level validation and checkpoint saving
+            # All ranks must participate in validation (for all_reduce),
+            # but only rank 0 saves checkpoints (handled inside the block).
+            if (
+                validation_interval_steps is not None
+                and valid_iter_factory is not None
+                and step_checkpoint_tracker is not None
+                and output_dir is not None
+                and reporter.count % validation_interval_steps == 0
+            ):
+                step_count = reporter.count
+                logging.info(
+                    f"Running step-level validation at "
+                    f"epoch {iepoch}, step {step_count}"
+                )
+                valid_stats = cls._run_step_validation(
+                    model=model,
+                    valid_iter_factory=valid_iter_factory,
+                    options=options,
+                    distributed_option=distributed_option,
+                    iepoch=iepoch,
+                )
+                # model.train() is called inside _run_step_validation
+
+                # Find the first valid-phase metric from best_model_criterion
+                metric_name = None
+                metric_mode = None
+                for _phase, _k, _mode in options.best_model_criterion:
+                    if _phase == "valid" and _k in valid_stats:
+                        metric_name = _k
+                        metric_mode = _mode
+                        break
+
+                if (
+                    metric_name is not None
+                    and (
+                        not distributed
+                        or distributed_option.dist_rank == 0
+                    )
+                ):
+                    metric_value = valid_stats[metric_name]
+                    ckpt_filename = (
+                        f"{iepoch}epoch_{step_count}steps"
+                        f"_{metric_name}{metric_value:.4f}.pth"
+                    )
+                    logging.info(
+                        f"Step validation: {metric_name}={metric_value:.4f}, "
+                        f"saving {ckpt_filename}"
+                    )
+
+                    # Save model checkpoint
+                    torch.save(
+                        model.state_dict()
+                        if not hasattr(model, "module")
+                        else model.module.state_dict(),
+                        output_dir / ckpt_filename,
+                    )
+
+                    step_checkpoint_tracker.add(
+                        iepoch,
+                        step_count,
+                        metric_name,
+                        metric_value,
+                        ckpt_filename,
+                    )
+
+                    # Update best symlink
+                    best_entry = step_checkpoint_tracker.get_best(metric_mode)
+                    if best_entry is not None:
+                        p = output_dir / f"valid.{metric_name}.best_steps.pth"
+                        if p.is_symlink() or p.exists():
+                            p.unlink()
+                        p.symlink_to(best_entry[4])
+
         else:
             if distributed:
                 iterator_stop.fill_(1)
                 torch.distributed.all_reduce(iterator_stop, ReduceOp.SUM)
         return all_steps_are_invalid
+
+    @staticmethod
+    @torch.no_grad()
+    def _run_step_validation(
+        model: torch.nn.Module,
+        valid_iter_factory: AbsIterFactory,
+        options: TrainerOptions,
+        distributed_option: DistributedOption,
+        iepoch: int,
+    ) -> Dict[str, float]:
+        """Run validation during training and return aggregated stats as a dict.
+
+        Unlike validate_one_epoch(), this does not use the main Reporter.
+        """
+        ngpu = options.ngpu
+        no_forward_run = options.no_forward_run
+        distributed = distributed_option.distributed
+
+        model.eval()
+
+        total_stats: Dict[str, float] = {}
+        total_weight: float = 0.0
+
+        iterator_stop = torch.tensor(0).to("cuda" if ngpu > 0 else "cpu")
+        for utt_id, batch in valid_iter_factory.build_iter(iepoch):
+            assert isinstance(batch, dict), type(batch)
+            if distributed:
+                torch.distributed.all_reduce(iterator_stop, ReduceOp.SUM)
+                if iterator_stop > 0:
+                    break
+
+            batch["utt_id"] = utt_id
+            batch = to_device(batch, "cuda" if ngpu > 0 else "cpu")
+            if no_forward_run:
+                continue
+
+            with autocast(options.use_amp, **autocast_args):
+                retval = model(**batch)
+
+            if isinstance(retval, dict):
+                stats = retval["stats"]
+                weight = retval["weight"]
+            else:
+                _, stats, weight = retval
+
+            if ngpu > 1 or distributed:
+                stats, weight = recursive_average(stats, weight, distributed)
+
+            w = float(weight)
+            for k, v in stats.items():
+                if v is not None:
+                    val = float(v) * w
+                    total_stats[k] = total_stats.get(k, 0.0) + val
+            total_weight += w
+
+        else:
+            if distributed:
+                iterator_stop.fill_(1)
+                torch.distributed.all_reduce(iterator_stop, ReduceOp.SUM)
+
+        # Compute weighted average
+        if total_weight > 0:
+            for k in total_stats:
+                total_stats[k] /= total_weight
+
+        model.train()
+        return total_stats
 
     @classmethod
     @torch.no_grad()
