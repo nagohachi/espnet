@@ -1564,14 +1564,18 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
     else
         _dsets="${test_sets}"
     fi
-    for dset in ${_dsets}; do
-        _data="${data_feats}/${dset}"
-        _dir="${asr_exp}/${inference_tag}/${dset}"
-        _logdir="${_dir}/logdir"
+
+    # ---- Function: decode a single test set ----
+    _decode_dset() {
+        local dset=$1
+        local _data="${data_feats}/${dset}"
+        local _dir="${asr_exp}/${inference_tag}/${dset}"
+        local _logdir="${_dir}/logdir"
         mkdir -p "${_logdir}"
 
-        _feats_type="$(<${_data}/feats_type)"
-        _audio_format="$(cat ${_data}/audio_format 2>/dev/null || echo ${audio_format})"
+        local _feats_type="$(<${_data}/feats_type)"
+        local _audio_format="$(cat ${_data}/audio_format 2>/dev/null || echo ${audio_format})"
+        local _scp _type
         if [ "${_feats_type}" = raw ]; then
             _scp=wav.scp
             if [[ "${audio_format}" == *ark* ]]; then
@@ -1587,8 +1591,9 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
         fi
 
         # 1. Split the key file
-        key_file=${_data}/${_scp}
-        split_scps=""
+        local key_file=${_data}/${_scp}
+        local split_scps=""
+        local _nj
         if "${use_k2}"; then
           # Now only _nj=1 is verified if using k2
           _nj=1
@@ -1596,6 +1601,7 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
           _nj=$(min "${inference_nj}" "$(<${key_file} wc -l)")
         fi
 
+        local n
         for n in $(seq "${_nj}"); do
             split_scps+=" ${_logdir}/keys.${n}.scp"
         done
@@ -1621,8 +1627,8 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
         if [ ${asr_task} == "asr" ] && [ -z ${inference_bin_tag} ]; then
             log "Calculating RTF & latency... log: '${_logdir}/calculate_rtf.log'"
             rm -f "${_logdir}"/calculate_rtf.log
-            _fs=$(python3 -c "import humanfriendly as h;print(h.parse_size('${fs}'))")
-            _sample_shift=$(python3 -c "print(1 / ${_fs} * 1000)") # in ms
+            local _fs=$(python3 -c "import humanfriendly as h;print(h.parse_size('${fs}'))")
+            local _sample_shift=$(python3 -c "print(1 / ${_fs} * 1000)") # in ms
             ${_cmd} JOB=1 "${_logdir}"/calculate_rtf.log \
                 pyscripts/utils/calculate_rtf.py \
                     --log-dir ${_logdir} \
@@ -1635,6 +1641,7 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
 
         # 4. Concatenates the output files from each jobs
         # shellcheck disable=SC2068
+        local ref_txt suffix f i
         for ref_txt in ${ref_text_files[@]}; do
             suffix=$(echo ${ref_txt} | sed 's/text//')
             for f in token token_int score text; do
@@ -1645,8 +1652,45 @@ if [ ${stage} -le 12 ] && [ ${stop_stage} -ge 12 ] && ! [[ " ${skip_stages} " =~
                 fi
             done
         done
+    }
 
-    done
+    # ---- Dispatch: parallel or sequential ----
+    if ${gpu_inference} && [ ${ngpu} -gt 1 ]; then
+        # Determine available GPUs
+        if [ -n "${CUDA_VISIBLE_DEVICES:-}" ]; then
+            IFS=',' read -ra _available_gpus <<< "${CUDA_VISIBLE_DEVICES}"
+        else
+            _available_gpus=()
+            for _i in $(seq 0 $((ngpu - 1))); do
+                _available_gpus+=("${_i}")
+            done
+        fi
+        _n_inf_gpus=$(min "${ngpu}" "${#_available_gpus[@]}")
+
+        # Parallel mode: assign each test set to a GPU via round-robin
+        _gpu_idx=0; _pids=(); _dset_names=()
+        for dset in ${_dsets}; do
+            _gpu_id="${_available_gpus[$((_gpu_idx % _n_inf_gpus))]}"
+            log "Submitting parallel decoding for ${dset} on GPU ${_gpu_id}..."
+            ( export CUDA_VISIBLE_DEVICES="${_gpu_id}"; _decode_dset "${dset}" ) &
+            _pids+=($!); _dset_names+=("${dset}")
+            _gpu_idx=$((_gpu_idx + 1))
+            # Throttle: wait for the oldest job when all GPU slots are occupied
+            if [ ${#_pids[@]} -ge ${_n_inf_gpus} ]; then
+                wait "${_pids[0]}" || { log "Decoding failed for ${_dset_names[0]}"; exit 1; }
+                _pids=("${_pids[@]:1}"); _dset_names=("${_dset_names[@]:1}")
+            fi
+        done
+        # Wait for remaining jobs
+        for i in "${!_pids[@]}"; do
+            wait "${_pids[$i]}" || { log "Decoding failed for ${_dset_names[$i]}"; exit 1; }
+        done
+    else
+        # Sequential mode (existing behavior)
+        for dset in ${_dsets}; do
+            _decode_dset "${dset}"
+        done
+    fi
 fi
 
 
