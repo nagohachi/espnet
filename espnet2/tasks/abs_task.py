@@ -593,6 +593,13 @@ class AbsTask(ABC):
             "and save step-level checkpoints.",
         )
         group.add_argument(
+            "--max_steps",
+            type=int_or_none,
+            default=None,
+            help="Stop training after this many total steps across all epochs. "
+            "If None, training continues until max_epoch.",
+        )
+        group.add_argument(
             "--grad_clip",
             type=float,
             default=5.0,

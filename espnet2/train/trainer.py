@@ -146,6 +146,7 @@ class TrainerOptions:
     gradient_as_bucket_view: bool
     ddp_comm_hook: Optional[str]
     validation_interval_steps: Optional[int]
+    max_steps: Optional[int]
 
 
 class Trainer:
@@ -641,6 +642,17 @@ class Trainer:
                 ):
                     break
 
+            # 9. Check max_steps
+            if trainer_options.max_steps is not None:
+                total_count = reporter.stats[iepoch]["train"]["total_count"]
+                if total_count >= trainer_options.max_steps:
+                    logging.info(
+                        f"Reached max_steps={trainer_options.max_steps}. "
+                        f"Training stopped at epoch {iepoch}, "
+                        f"total steps {total_count}."
+                    )
+                    break
+
         else:
             logging.info(
                 f"The training was finished at {trainer_options.max_epoch} epochs "
@@ -686,6 +698,7 @@ class Trainer:
         validation_interval_steps = getattr(
             options, "validation_interval_steps", None
         )
+        max_steps = getattr(options, "max_steps", None)
 
         if log_interval is None:
             try:
@@ -1005,6 +1018,15 @@ class Trainer:
                         if p.is_symlink() or p.exists():
                             p.unlink()
                         p.symlink_to(best_entry[4])
+
+            # Check max_steps: stop training after reaching the target total steps
+            if max_steps is not None and reporter.get_total_count() >= max_steps:
+                logging.info(
+                    f"Reached max_steps={max_steps} "
+                    f"(total_count={reporter.get_total_count()}). "
+                    f"Stopping training."
+                )
+                break
 
         else:
             if distributed:
