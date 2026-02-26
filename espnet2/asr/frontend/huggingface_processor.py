@@ -67,7 +67,8 @@ class HuggingFaceProcessorOnlyFrontend(AbsFrontend):
         with torch.no_grad():
             # Re-obtain jagged inputs to feed into the HF processor
             device = inputs.device
-            inputs = [arr[:l].cpu().numpy() for arr, l in zip(inputs, input_lengths)]
+            dtype = inputs.dtype
+            inputs = [arr[:l].cpu().float().numpy() for arr, l in zip(inputs, input_lengths)]
             encoded = self.processor(
                 inputs,
                 return_tensors="pt",
@@ -79,7 +80,7 @@ class HuggingFaceProcessorOnlyFrontend(AbsFrontend):
             else:
                 encoded_lengths = torch.sum(encoded.attention_mask, dim=-1)
 
-        return encoded.input_values, encoded_lengths
+        return encoded.input_values.to(dtype=dtype), encoded_lengths
 
     def reload_pretrained_parameters(self):
         logging.info("Nothing to reload")
