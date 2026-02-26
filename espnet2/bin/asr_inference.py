@@ -261,8 +261,10 @@ class Speech2Text:
                 if hasattr(decoder, "use_peft") and decoder.use_peft:
                     hugging_face_model = decoder.llm
                 else:
+                    _hf_kwargs = dict(torch_dtype=getattr(torch, dtype))
+                    _hf_kwargs.update(decoder.overriding_architecture_config)
                     hugging_face_model = AutoModelForCausalLM.from_pretrained(
-                        decoder.model_name_or_path, **decoder.overriding_architecture_config
+                        decoder.model_name_or_path, **_hf_kwargs
                     )
 
                     hugging_face_model.resize_token_embeddings(decoder.lm_head.out_features)
@@ -277,8 +279,10 @@ class Speech2Text:
                         lm_head = get_hugging_face_model_lm_head(hugging_face_model)
                     lm_head.load_state_dict(decoder.lm_head.state_dict())
             else:
+                _hf_kwargs = dict(torch_dtype=getattr(torch, dtype))
+                _hf_kwargs.update(decoder.overriding_architecture_config)
                 hugging_face_model = AutoModelForSeq2SeqLM.from_pretrained(
-                    decoder.model_name_or_path, **decoder.overriding_architecture_config
+                    decoder.model_name_or_path, **_hf_kwargs
                 )
 
                 if decoder.separate_lm_head:
@@ -302,7 +306,7 @@ class Speech2Text:
                 del asr_model.decoder.decoder
 
             hugging_face_linear_in = decoder.linear_in
-            hugging_face_model.to(device=device).eval()
+            hugging_face_model.to(device=device, dtype=getattr(torch, dtype)).eval()
 
             beam_search = None
             beam_search_transducer = None
@@ -830,9 +834,12 @@ def inference(
     )
 
     # 3. Build data-iterator
+    # numpy does not support bfloat16; load data as float32,
+    # the conversion to bfloat16 happens later in torch.
+    _loader_dtype = "float32" if dtype == "bfloat16" else dtype
     loader = ASRTask.build_streaming_iterator(
         data_path_and_name_and_type,
-        dtype=dtype,
+        dtype=_loader_dtype,
         batch_size=batch_size,
         key_file=key_file,
         num_workers=num_workers,
@@ -941,7 +948,7 @@ def get_parser():
     parser.add_argument(
         "--dtype",
         default="float32",
-        choices=["float16", "float32", "float64"],
+        choices=["bfloat16", "float16", "float32", "float64"],
         help="Data type",
     )
     parser.add_argument(
