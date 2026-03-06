@@ -36,6 +36,7 @@ asr_args=(
     --hugging_face_model_name_or_path "${hugging_face_model_name_or_path}" \
     --asr_config "${asr_config}" \
     --inference_config "${inference_config}" \
+    --inference_asr_model valid.wer.best.pth \
     --train_set "${train_set}" \
     --valid_set "${valid_set}" \
     --test_sets "${test_sets}" \
@@ -45,6 +46,7 @@ asr_args=(
     --nj 64 \
     --inference_nj 1 \
     --gpu_inference true \
+    --inference_dtype bfloat16 \
     --speed_perturb_factors "0.9 1.0 1.1" \
     --lm_train_text "dump/raw/org/${train_set}_sp/text" \
     --asr_tag "${asr_tag}" \

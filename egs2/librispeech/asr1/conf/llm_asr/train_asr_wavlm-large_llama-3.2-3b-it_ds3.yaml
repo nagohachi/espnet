@@ -1,0 +1,79 @@
+batch_type: numel
+batch_bins: 200000000
+accum_grad: 2
+max_epoch: 10
+patience: none
+init: none
+best_model_criterion:
+-   - valid
+    - wer
+    - min
+keep_nbest_models: 10
+
+encoder: wavlm
+encoder_conf:
+    base_model: microsoft/wavlm-large
+    freeze_bottom_layers: -1
+    freeze_feature_encoder: true
+    initial_freeze_bottom_layers: 0
+    gradual_unfreeze_steps: 0
+    hidden_dropout: 0.1
+    feat_proj_dropout: 0.0
+    mask_time_prob: 0.065
+    mask_time_length: 10
+    mask_feature_prob: 0.008
+    mask_feature_length: 64
+    layerdrop: 0.1
+
+postencoder: frame_stacking_mlp2
+postencoder_conf:
+    output_size: 2048
+    mid_size: 2048
+    downsample_k: 3
+
+decoder: hugging_face_transformers
+decoder_conf:
+    model_name_or_path: meta-llama/Llama-3.2-3B-Instruct
+    causal_lm: true
+    lora_r: 8
+    lora_alpha: 16
+    lora_dropout: 0.1
+    prefix: "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nCutting Knowledge Date: December 2023\nToday Date: 18 Jan 2026\n\nTranscribe the speech to text.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n"                                                                                                                                       
+    postfix: "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n" 
+
+model_conf:
+    ctc_weight: 0.0
+    lsm_weight: 0.1
+    length_normalized_loss: true
+    report_cer: true
+    report_wer: true
+    sym_space: "Ġ"
+    sym_eos: "<|eot_id|>"                                                         
+    sym_sos: "<|begin_of_text|>" 
+
+grad_clip: 1.0
+
+optim: adamw
+optim_conf:
+    lr: 1.0e-4
+    betas: [0.9, 0.999]
+    eps: 1.0e-8
+    weight_decay: 0.001
+
+
+scheduler: warmuplr
+scheduler_conf:
+    warmup_steps: 500
+
+
+num_att_plot: 0
+
+frontend: huggingface_processor_only
+frontend_conf:
+    model: microsoft/wavlm-large
+
+normalize: null
+
+specaug: null
+
+unused_parameters: true

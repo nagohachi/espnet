@@ -11,7 +11,8 @@ def hugging_face_token_id_converter(request):
 @pytest.mark.execution_timeout(20)
 def test_init_pythia():
     id_converter = HuggingFaceTokenIDConverter("EleutherAI/pythia-410m-deduped")
-    assert id_converter.get_num_vocabulary_size() == 50254
+    # len(tokenizer) includes special tokens, not just vocab_size
+    assert id_converter.get_num_vocabulary_size() == 50277
 
 
 def test_ids2tokens(hugging_face_token_id_converter: HuggingFaceTokenIDConverter):
