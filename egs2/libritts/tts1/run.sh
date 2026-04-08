@@ -22,8 +22,8 @@ train_set=train-clean-460
 valid_set=dev-clean
 test_sets="dev-clean test-clean"
 
-train_config=conf/train.yaml
-inference_config=conf/decode.yaml
+train_config=conf/tuning/train_xvector_vits.yaml
+inference_config=conf/tuning/decode_vits.yaml
 
 cleaner=tacotron
 g2p=g2p_en_no_space # or g2p_en
