@@ -27,8 +27,8 @@ encoder_conf:
 
 postencoder: frame_stacking_mlp2
 postencoder_conf:
-    output_size: 2048
-    mid_size: 2048
+    output_size: 3072
+    mid_size: 3072
     downsample_k: 5
 
 decoder: hugging_face_transformers

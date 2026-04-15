@@ -313,6 +313,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/a0/e3/59cd50310fc9b59512193629e1984c1f95e5c8ae6e5d8c69532ccc65a7fe/pycparser-2.23-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/5a/87/b70ad306ebb6f9b585f114d0ac2137d792b48be34d732d60e597c2f8465a/pydantic-2.12.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/a8/76/7727ef2ffa4b62fcab916686a68a0426b9b790139720e1934e8ba797e238/pydantic_core-2.41.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+      - pypi: https://files.pythonhosted.org/packages/58/74/ccd31c696f047ba381f9b11a504bf1199756c3f30f3de64e3eeb83e10b4a/pyopenjtalk-0.4.1.tar.gz
       - pypi: https://files.pythonhosted.org/packages/10/5e/1aa9a93198c6b64513c9d7752de7422c06402de6600a8767da1524f9570b/pyparsing-3.2.5-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/1d/97/87bb66ff62fb1a9a6d216e31913778335a125be813597f3a70d88b077e0f/pypinyin-0.44.0-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ec/57/56b9bcc3c9c6a792fcbaf139543cee77261f3651ca9da0c93f5c1221264b/python_dateutil-2.9.0.post0-py2.py3-none-any.whl
@@ -4458,6 +4459,35 @@ packages:
   requires_dist:
   - typing-extensions>=4.14.1
   requires_python: '>=3.9'
+- pypi: https://files.pythonhosted.org/packages/58/74/ccd31c696f047ba381f9b11a504bf1199756c3f30f3de64e3eeb83e10b4a/pyopenjtalk-0.4.1.tar.gz
+  name: pyopenjtalk
+  version: 0.4.1
+  sha256: d5ada46f7fc2b52c1c79c273eb9668ff6ad7ab276a8db9d8be119ef93440f0dc
+  requires_dist:
+  - importlib-resources ; python_full_version < '3.9'
+  - numpy>=1.20.0
+  - tqdm
+  - sphinx-rtd-theme ; extra == 'docs'
+  - nbsphinx>=0.8.6 ; extra == 'docs'
+  - jinja2>=3.0.1 ; extra == 'docs'
+  - pandoc ; extra == 'docs'
+  - ipython ; extra == 'docs'
+  - jupyter ; extra == 'docs'
+  - cython>=0.29.16 ; extra == 'dev'
+  - pysen ; extra == 'dev'
+  - types-setuptools ; extra == 'dev'
+  - mypy<=0.910 ; extra == 'dev'
+  - black>=19.19b0,<=20.8 ; extra == 'dev'
+  - click<8.1.0 ; extra == 'dev'
+  - flake8>=3.7,<4 ; extra == 'dev'
+  - flake8-bugbear ; extra == 'dev'
+  - isort>=4.3,<5.2.0 ; extra == 'dev'
+  - types-decorator ; extra == 'dev'
+  - importlib-metadata<5.0 ; extra == 'dev'
+  - pytest ; extra == 'test'
+  - scipy ; extra == 'test'
+  - marine>=0.0.5 ; extra == 'marine'
+  requires_python: '>=3.8'
 - pypi: https://files.pythonhosted.org/packages/10/5e/1aa9a93198c6b64513c9d7752de7422c06402de6600a8767da1524f9570b/pyparsing-3.2.5-py3-none-any.whl
   name: pyparsing
   version: 3.2.5
